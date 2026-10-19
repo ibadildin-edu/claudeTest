@@ -1,0 +1,23 @@
+@import '@fontsource-variable/manrope';
+@import 'tailwindcss';
+@config '../tailwind.config.ts';
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    @apply bg-cream-200 font-sans text-espresso-900 antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
+
+  /* Recharts focuses the chart surface on click; the outline is noise there. */
+  .recharts-surface:focus,
+  .recharts-wrapper:focus {
+    outline: none;
+  }
+}
