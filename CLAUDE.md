@@ -47,7 +47,9 @@ npm install
 npm run dev        # http://localhost:5173, /api проксируется на :8000
 npm run build
 npm run test
-npm run lint
+npm run lint       # oxlint
+npm run typecheck
+npm run gen:api    # типы из http://localhost:8000/openapi.json → src/api/schema.ts (бэкенд должен работать)
 ```
 
 ## Соглашения

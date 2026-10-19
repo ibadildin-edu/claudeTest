@@ -9,7 +9,9 @@ Vite + React + TypeScript, Redux Toolkit + RTK Query, React Router, Recharts, re
 ## Принятые решения
 
 - **Live-лента «Последние заказы»**: у заказа есть статус, фронтенд опрашивает сервер через RTK Query `pollingInterval`
-  (5–10 с, только при включённом Live). Новые заказы создаёт отдельный скрипт-симулятор.
+  (8 с, только при включённом Live). Новые заказы создаёт отдельный скрипт-симулятор.
+  Пока на бэкенде нет `/orders/recent` и `simulate.py`, лента собирается из `/orders?sort=-createdAt&pageSize=9`
+  и `/analytics/kpi` за сегодня (`RecentOrdersPanel`).
 - **Авторизации нет**: все эндпоинты открыты.
 - **Тесты**: pytest + httpx на бэкенде (отдельная тестовая БД `coffeemetrics_test`), Vitest + Testing Library на фронтенде.
 - **Сравнение точек** — отдельная карточка на дашборде под тепловой картой.
@@ -47,14 +49,16 @@ collegeProjectClaude/
 └── frontend/
     ├── package.json, vite.config.ts, tailwind.config.ts, tsconfig*.json   (шаг «фронтенд»)
     └── src/
-        ├── app/               # store.ts, hooks.ts, router.tsx
+        ├── app/               # store.ts, hooks.ts, router.tsx, routeHandle.ts
         ├── api/               # baseApi.ts + endpoints (injectEndpoints)
         ├── features/filters/  # filtersSlice.ts
-        ├── layouts/           # AppLayout.tsx (Sidebar + <Outlet/>)
+        ├── layouts/           # AppLayout.tsx (Sidebar + PageHeader + <Outlet/>)
         ├── pages/             # страницы-маршруты
-        ├── components/        # ui/, charts/, dashboard/, orders/, menu/
+        ├── components/        # ui/, charts/, dashboard/, orders/, menu/, locations/
         ├── lib/               # format.ts, dates.ts
-        └── schemas/           # zod-схемы форм
+        ├── schemas/           # zod-схемы форм и URL-фильтров
+        ├── theme/             # palette.ts — токены цветов для Tailwind и Recharts
+        └── test/              # setup.ts, mockApi.ts
 ```
 
 Пустые папки на этом шаге держим через `.gitkeep`.
@@ -181,9 +185,9 @@ collegeProjectClaude/
 
 ## 5. Фронтенд
 
-### Маршруты (React Router, data router, общий layout)
+### Маршруты (React Router 8, data router, общий layout)
 ```
-/                       AppLayout (Sidebar + <Outlet/>)
+/                       AppLayout (Sidebar + PageHeader + <Outlet/>)
 ├── index               DashboardPage
 ├── orders              OrdersPage (фильтры и страница — в URL search params)
 │   └── :orderId        OrderDrawer (вложенный маршрут, боковая панель поверх таблицы)
@@ -191,31 +195,49 @@ collegeProjectClaude/
 │   ├── new             ProductFormModal
 │   └── :productId/edit ProductFormModal
 ├── locations           LocationsPage
-│   └── :locationId     LocationPage (дашборд, отфильтрованный по одной точке: KPI, график, heatmap, топ)
+│   └── :locationId     LocationPage (дашборд, отфильтрованный по одной точке: KPI, график, heatmap, топ, доли)
 └── *                   NotFoundPage
 ```
+- Страницы подключены через `lazy` маршрута: Recharts грузится только для страниц с графиками.
+- Шапка (`PageHeader`) берёт заголовок и набор глобальных фильтров из `handle` самого глубокого маршрута
+  (`app/routeHandle.ts`); заголовок страницы точки — компонент `LocationTitle`.
+- Ошибки рендера ловит `errorElement` (`RouteErrorPage`) внутри layout.
 
 ### Redux
 - `api/baseApi.ts` — `createApi` с `fetchBaseQuery({ baseUrl: '/api/v1' })`, теги
   `Product`, `Order`, `Location`, `Category`, `Analytics`. Эндпоинты разнесены по файлам через `injectEndpoints`:
   `analyticsApi.ts`, `ordersApi.ts`, `productsApi.ts`, `locationsApi.ts`, `categoriesApi.ts`.
-  Мутации товаров инвалидируют `Product` и `Analytics`.
-- `features/filters/filtersSlice.ts` — глобальные фильтры дашборда: `period: '7d' | '30d' | '90d'`,
-  `locationId: number | null`, `live: boolean`. Селектор `selectDateRange` превращает период в `dateFrom/dateTo`.
+  Мутации товаров инвалидируют `Product` и `Analytics`; изменение товара — ещё и `Order` (в составе заказа имя товара).
+- Типы ответов генерируются из `openapi.json`: `npm run gen:api` → `api/schema.ts` (openapi-typescript, коммитим),
+  читаемые алиасы — в `api/types.ts`.
+- `features/filters/filtersSlice.ts` — глобальные фильтры шапки: `period: '7d' | '30d' | '90d'` (по умолчанию `30d`),
+  `locationId: number | null`, `live: boolean`. Мемоизированные селекторы `selectDateRange` (период → `dateFrom/dateTo`
+  в зоне Алматы) и `selectAnalyticsParams` отдают стабильный объект, чтобы карточки в `memo` не перерисовывались зря.
 - Данные с сервера — только через RTK Query, в слайсах — только состояние UI.
 
 ### Компоненты
-- `layouts/`: `AppLayout`, `Sidebar` (навигация и блок «Точки сети» с часами работы), `PageHeader`.
-- `components/ui/`: `Card`, `Button`, `SegmentedControl` (7/30/90 дней), `Select`, `Toggle`, `Badge`,
-  `DeltaBadge` (↑ +9,4%), `Table`, `Pagination`, `Modal`, `Drawer`, `Skeleton`, `EmptyState`, `ErrorState`.
-- `components/dashboard/`: `DashboardFilters`, `KpiCards`/`KpiCard`, `RevenueChart` (Recharts Area + Line пунктиром),
-  `TopProductsList` (полосы цвета категории), `CategoryDonut` (Recharts Pie с суммой в центре), `LoadHeatmap`
-  (своя CSS-сетка, в Recharts heatmap нет; подсказка по наведению «вторник, 15:00–16:00 · ≈ 16 заказов в час»),
-  `LocationsCompareChart` (сгруппированные столбцы), `RecentOrdersPanel` (polling при Live).
-- `components/orders/`: `OrdersFilters`, `OrdersTable`, `OrderStatusBadge`.
-- `components/menu/`: `ProductsTable`, `ProductForm` (react-hook-form + `zodResolver`, схема в `schemas/product.ts`).
-- `lib/format.ts`: `formatMoney` (`2 598 ₸`), `formatMoneyCompact` (`52,6 млн ₸`), `formatPct`, даты через `Intl` с локалью `ru-RU`.
-- Tailwind: цвета макета в `tailwind.config.ts` (фон `cream`, тёмный сайдбар `espresso`, акцент `brand` — оранжевый, цвета категорий).
+- `layouts/`: `AppLayout`, `Sidebar` + `SidebarLocations` (блок «Точки сети» с часами работы), `PageHeader`.
+- `features/filters/`: `PeriodFilter`, `LocationFilter`, `LiveToggle`, `FiltersSummary` (подзаголовок с датами и точкой).
+- `components/ui/`: `Card`, `CardHeader`, `Button`, `SegmentedControl` (7/30/90 дней), `Select`, `Input`, `Field`, `Toggle`,
+  `Badge`, `DeltaBadge` (↑ +9,4%), `ColorDot`, `Table`, `Pagination`, `Modal`, `Drawer`, `Skeleton`, `EmptyState`, `ErrorState`.
+- `components/dashboard/` (карточки графиков — в `React.memo`, подготовка данных — `useMemo`, обработчики — `useCallback`):
+  `KpiCards`/`KpiCard`, `RevenueChart` (Recharts Area + Line пунктиром), `TopProductsChart` (горизонтальные Bar цвета категории),
+  `CategoryDonut` (Recharts Pie с суммой в центре), `LoadHeatmap` + `HeatmapGrid` (своя CSS-сетка, в Recharts heatmap нет;
+  подсказка «вторник, 15:00–16:00 · ≈ 16 заказов в час», без наведения — пиковый час), `LocationsCompareChart`
+  (сгруппированные столбцы: выручка и заказы на двух осях), `RecentOrdersPanel` (polling при Live).
+  Цвета из данных Recharts 3 получает через проп `shape` (`Cell` устарел).
+- `components/orders/`: `OrdersFilters`, `OrdersTable`, `SortableHeader`, `OrderStatusBadge`, `OrderDrawer`.
+  URL-параметры разбирает zod-схема `schemas/ordersSearch.ts` (мусор → «без фильтра», а не 422).
+- `components/menu/`: `ProductsTable`, `ProductForm` (react-hook-form + `zodResolver`, схема в `schemas/product.ts`,
+  ошибки 409/422 с сервера попадают в поля формы), `ProductFormModal`, `HideProductDialog`.
+- `components/locations/`: `LocationCard`, `OpenStatus`, `LocationTitle`.
+- `lib/format.ts`: `formatMoney` (`2 598 ₸`), `formatMoneyCompact` (`52,6 млн ₸`), `formatPct`, `formatDelta`, `pluralize`,
+  даты через `Intl` с локалью `ru-RU`; `lib/dates.ts` — календарные даты в `Asia/Almaty`.
+- Tailwind 4 + `tailwind.config.ts` (через `@config`): токены в `theme/palette.ts` (фон `cream`, тёмный сайдбар `espresso`,
+  акцент `brand`, цвета категорий, шкала `heat`). Recharts берёт те же токены из `palette.ts`.
+- Линтер — oxlint (шаблон Vite): `rules-of-hooks`, `exhaustive-deps`, `no-explicit-any`.
+- Тесты (Vitest + Testing Library): форматирование, даты, слайс фильтров, zod-схемы, форма позиции, тепловая карта,
+  маршруты (404 внутри layout, drawer заказа как вложенный маршрут) на подменённом `fetch` (`test/mockApi.ts`).
 
 ---
 
