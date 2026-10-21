@@ -4,6 +4,7 @@ import { useGetKpiQuery } from '@/api/analyticsApi'
 import type { AnalyticsParams, Kpi, Metric } from '@/api/types'
 import { Card } from '@/components/ui/Card'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { useLivePolling } from '@/features/live/useLive'
 import { daysInRange } from '@/lib/dates'
 import { formatMoney, formatMoneyCompact, formatNumber, formatPct } from '@/lib/format'
 import { KpiCard } from './KpiCard'
@@ -68,7 +69,8 @@ function toViews(kpi: Kpi, days: number): KpiView[] {
 const GRID = 'grid gap-4 @lg:grid-cols-2 @4xl:grid-cols-4'
 
 export const KpiCards = memo(function KpiCards({ params }: KpiCardsProps) {
-  const { data, isLoading, isFetching, isError, error, refetch } = useGetKpiQuery(params)
+  const polling = useLivePolling()
+  const { data, currentData, isLoading, isFetching, isError, error, refetch } = useGetKpiQuery(params, polling)
   const days = daysInRange(params.dateFrom, params.dateTo)
 
   const views = useMemo(() => (data ? toViews(data, days) : []), [data, days])
@@ -92,7 +94,7 @@ export const KpiCards = memo(function KpiCards({ params }: KpiCardsProps) {
   }
 
   return (
-    <div className={clsx(GRID, 'transition-opacity', isFetching && 'opacity-60')}>
+    <div className={clsx(GRID, 'transition-opacity', isFetching && !currentData && 'opacity-60')}>
       {views.map(({ key, ...view }) => (
         <KpiCard key={key} {...view} />
       ))}

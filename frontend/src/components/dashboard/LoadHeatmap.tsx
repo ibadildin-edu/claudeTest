@@ -7,6 +7,7 @@ import { CardHeader } from '@/components/ui/CardHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { useLivePolling } from '@/features/live/useLive'
 import { HeatmapGrid } from './HeatmapGrid'
 
 interface LoadHeatmapProps {
@@ -14,7 +15,8 @@ interface LoadHeatmapProps {
 }
 
 export const LoadHeatmap = memo(function LoadHeatmap({ params }: LoadHeatmapProps) {
-  const { data, isLoading, isFetching, isError, error, refetch } = useGetHeatmapQuery(params)
+  const polling = useLivePolling()
+  const { data, currentData, isLoading, isFetching, isError, error, refetch } = useGetHeatmapQuery(params, polling)
 
   const subtitle = useMemo(() => {
     if (!data || data.length === 0) return 'Среднее число заказов в час'
@@ -38,7 +40,7 @@ export const LoadHeatmap = memo(function LoadHeatmap({ params }: LoadHeatmapProp
     body = <EmptyState title="Заказов за период нет" />
   } else {
     body = (
-      <div className={clsx('transition-opacity', isFetching && 'opacity-60')}>
+      <div className={clsx('transition-opacity', isFetching && !currentData && 'opacity-60')}>
         <HeatmapGrid cells={data} />
       </div>
     )

@@ -1,3 +1,4 @@
+import random
 from collections.abc import AsyncIterator
 from datetime import datetime, time
 
@@ -8,10 +9,12 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.api.v1.deps import get_simulator
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.main import create_app
 from app.models import Base, Category, Location, Order, OrderItem, OrderStatus, Product
+from app.services.simulator import OrderSimulator
 
 settings = get_settings()
 TEST_DB_URL = settings.test_database_url
@@ -44,14 +47,31 @@ async def session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessio
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
+# Thursday lunchtime right after the dataset below: every location is open.
+SIMULATOR_NOW = local("2026-03-12 13:10")
+
+
 @pytest.fixture
-async def client(session_factory: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncClient]:
+async def simulator(session_factory: async_sessionmaker[AsyncSession]) -> AsyncIterator[OrderSimulator]:
+    """Fast simulator on the test database with a frozen clock."""
+    simulator = OrderSimulator(
+        session_factory, TZ, interval=(0.01, 0.02), clock=lambda: SIMULATOR_NOW, rng=random.Random(7)
+    )
+    yield simulator
+    await simulator.stop()
+
+
+@pytest.fixture
+async def client(
+    session_factory: async_sessionmaker[AsyncSession], simulator: OrderSimulator
+) -> AsyncIterator[AsyncClient]:
     async def override_session() -> AsyncIterator[AsyncSession]:
         async with session_factory() as session:
             yield session
 
     app = create_app()
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_simulator] = lambda: simulator
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 

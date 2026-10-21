@@ -2,15 +2,25 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.services.periods import Period
+from app.services.simulator import OrderSimulator
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+
+def get_simulator(request: Request) -> OrderSimulator:
+    """The app-wide simulator created in the lifespan of `app.main`."""
+    simulator: OrderSimulator = request.app.state.simulator
+    return simulator
+
+
+SimulatorDep = Annotated[OrderSimulator, Depends(get_simulator)]
 
 MAX_PERIOD_DAYS = 366
 

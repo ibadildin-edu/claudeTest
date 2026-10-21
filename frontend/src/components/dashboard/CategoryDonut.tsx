@@ -11,6 +11,7 @@ import { ColorDot } from '@/components/ui/ColorDot'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { useLivePolling } from '@/features/live/useLive'
 import { formatMoney, formatMoneyCompact, formatPct, pluralize } from '@/lib/format'
 import { palette } from '@/theme/palette'
 
@@ -29,7 +30,8 @@ interface Slice {
 const CATEGORY_FORMS = { one: 'категория', few: 'категории', many: 'категорий' }
 
 export const CategoryDonut = memo(function CategoryDonut({ params }: CategoryDonutProps) {
-  const { data, isLoading, isFetching, isError, error, refetch } = useGetCategoryShareQuery(params)
+  const polling = useLivePolling()
+  const { data, currentData, isLoading, isFetching, isError, error, refetch } = useGetCategoryShareQuery(params, polling)
 
   const slices = useMemo<Slice[]>(
     () =>
@@ -82,7 +84,7 @@ export const CategoryDonut = memo(function CategoryDonut({ params }: CategoryDon
     body = <EmptyState title="Продаж за период нет" />
   } else {
     body = (
-      <div className={clsx('transition-opacity', isFetching && 'opacity-60')}>
+      <div className={clsx('transition-opacity', isFetching && !currentData && 'opacity-60')}>
         <div className="relative mx-auto h-56 max-w-56">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>

@@ -38,6 +38,9 @@ export type LocationCompareItem = Schemas['LocationCompareItem']
 export type AnalyticsQuery = QueryParams<'/api/v1/analytics/kpi'>
 export type TopProductsQuery = QueryParams<'/api/v1/analytics/top-products'>
 
+export type SimulatorStatus = Schemas['SimulatorStatus']
+export type SimulatorIdleReason = Schemas['SimulatorIdleReason']
+
 export type ValidationError = Schemas['ValidationError']
 
 /** What the UI always sends to /analytics: an explicit date range and an optional location. */

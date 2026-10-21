@@ -251,6 +251,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/simulator/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Status */
+        get: operations["get_status_api_v1_simulator_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/simulator/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start
+         * @description Start creating live orders. Starting a running simulator changes nothing.
+         */
+        post: operations["start_api_v1_simulator_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/simulator/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop
+         * @description Stop the simulator; orders that are still being prepared are completed.
+         */
+        post: operations["stop_api_v1_simulator_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -545,6 +602,24 @@ export interface components {
             ordersCount: number;
             /** Previousrevenue */
             previousRevenue: number;
+        };
+        /**
+         * SimulatorIdleReason
+         * @description Why a running simulator is not creating orders at the moment.
+         * @enum {string}
+         */
+        SimulatorIdleReason: "closed" | "no_locations" | "no_products" | "error";
+        /** SimulatorStatus */
+        SimulatorStatus: {
+            /** Running */
+            running: boolean;
+            /** Startedat */
+            startedAt: string | null;
+            /** Orderscreated */
+            ordersCreated: number;
+            /** Lastorderat */
+            lastOrderAt: string | null;
+            idleReason: components["schemas"]["SimulatorIdleReason"] | null;
         };
         /** TopProduct */
         TopProduct: {
@@ -1213,6 +1288,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_status_api_v1_simulator_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulatorStatus"];
+                };
+            };
+        };
+    };
+    start_api_v1_simulator_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulatorStatus"];
+                };
+            };
+        };
+    };
+    stop_api_v1_simulator_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulatorStatus"];
                 };
             };
         };

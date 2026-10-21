@@ -23,6 +23,7 @@ import { CardHeader } from '@/components/ui/CardHeader'
 import { DeltaBadge } from '@/components/ui/DeltaBadge'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { useLivePolling } from '@/features/live/useLive'
 import { formatCompact, formatMoney, formatMoneyCompact, formatNumber } from '@/lib/format'
 import { palette } from '@/theme/palette'
 
@@ -50,7 +51,8 @@ export const LocationsCompareChart = memo(function LocationsCompareChart({
 }: LocationsCompareChartProps) {
   // The endpoint ignores locationId: it always compares the whole network.
   const queryArgs = useMemo(() => ({ dateFrom: params.dateFrom, dateTo: params.dateTo }), [params.dateFrom, params.dateTo])
-  const { data, isLoading, isFetching, isError, error, refetch } = useGetLocationsCompareQuery(queryArgs)
+  const polling = useLivePolling()
+  const { data, currentData, isLoading, isFetching, isError, error, refetch } = useGetLocationsCompareQuery(queryArgs, polling)
 
   const bars = useMemo<LocationBar[]>(
     () =>
@@ -116,7 +118,7 @@ export const LocationsCompareChart = memo(function LocationsCompareChart({
     body = <EmptyState title="Нет точек для сравнения" />
   } else {
     body = (
-      <div className={clsx('transition-opacity', isFetching && 'opacity-60')}>
+      <div className={clsx('transition-opacity', isFetching && !currentData && 'opacity-60')}>
         <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
           <BarChart data={bars} margin={{ top: 8, right: 0, bottom: 0, left: 0 }} barGap={6} barCategoryGap="24%">
             <CartesianGrid vertical={false} stroke={gridStroke} />

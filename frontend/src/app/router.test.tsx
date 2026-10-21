@@ -40,6 +40,10 @@ const ordersPage: OrdersPage = {
   pageSize: 20,
 }
 
+// The location page is lazy and pulls in Recharts on first import: with test files running
+// in parallel that takes longer than the default 1 s of findBy*.
+const CHART_PAGE_TIMEOUT = { timeout: 5_000 }
+
 function renderAt(path: string) {
   const router = createMemoryRouter(routes, { initialEntries: [path] })
   render(
@@ -80,6 +84,6 @@ describe('routes', () => {
     mockApi({ '/locations': locations })
     renderAt('/locations/999')
 
-    expect(await screen.findByText('Точка не найдена')).toBeInTheDocument()
+    expect(await screen.findByText('Точка не найдена', {}, CHART_PAGE_TIMEOUT)).toBeInTheDocument()
   })
 })

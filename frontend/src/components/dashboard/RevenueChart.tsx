@@ -21,6 +21,7 @@ import { CardHeader } from '@/components/ui/CardHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { useLivePolling } from '@/features/live/useLive'
 import { daysInRange } from '@/lib/dates'
 import {
   formatCompact,
@@ -49,7 +50,8 @@ interface RevenuePoint {
 const CHART_HEIGHT = 300
 
 export const RevenueChart = memo(function RevenueChart({ params }: RevenueChartProps) {
-  const { data, isLoading, isFetching, isError, error, refetch } = useGetRevenueDailyQuery(params)
+  const polling = useLivePolling()
+  const { data, currentData, isLoading, isFetching, isError, error, refetch } = useGetRevenueDailyQuery(params, polling)
   // Same args as KpiCards, so RTK Query serves it from the cache without a second request.
   const { data: kpi } = useGetKpiQuery(params)
   const days = daysInRange(params.dateFrom, params.dateTo)
@@ -102,7 +104,7 @@ export const RevenueChart = memo(function RevenueChart({ params }: RevenueChartP
     body = <EmptyState title="Нет выручки за период" description="Выберите другой период или точку." />
   } else {
     body = (
-      <div className={clsx('transition-opacity', isFetching && 'opacity-60')}>
+      <div className={clsx('transition-opacity', isFetching && !currentData && 'opacity-60')}>
         <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
           <ComposedChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid vertical={false} stroke={gridStroke} />

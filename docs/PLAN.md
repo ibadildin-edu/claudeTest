@@ -8,10 +8,11 @@ Vite + React + TypeScript, Redux Toolkit + RTK Query, React Router, Recharts, re
 
 ## Принятые решения
 
-- **Live-лента «Последние заказы»**: у заказа есть статус, фронтенд опрашивает сервер через RTK Query `pollingInterval`
-  (8 с, только при включённом Live). Новые заказы создаёт отдельный скрипт-симулятор.
-  Пока на бэкенде нет `/orders/recent` и `simulate.py`, лента собирается из `/orders?sort=-createdAt&pageSize=9`
-  и `/analytics/kpi` за сегодня (`RecentOrdersPanel`).
+- **Live** — это фоновый симулятор заказов в процессе API, а не флаг интерфейса. Переключатель Live в шапке
+  вызывает `POST /simulator/start` и `/simulator/stop`. Пока симулятор работает, данные дашборда опрашиваются через
+  RTK Query `pollingInterval` раз в 5 с, а новые заказы плавно появляются в ленте «Последние заказы».
+  Лента собирается из `/orders?sort=-createdAt&pageSize=9` и `/analytics/kpi` за сегодня (`RecentOrdersPanel`),
+  отдельный `/orders/recent` не понадобился.
 - **Авторизации нет**: все эндпоинты открыты.
 - **Тесты**: pytest + httpx на бэкенде (отдельная тестовая БД `coffeemetrics_test`), Vitest + Testing Library на фронтенде.
 - **Сравнение точек** — отдельная карточка на дашборде под тепловой картой.
@@ -42,9 +43,9 @@ collegeProjectClaude/
 │   │   ├── core/              # config.py (pydantic-settings), db.py (engine, sessionmaker, get_session)
 │   │   ├── models/            # SQLAlchemy-модели (Mapped[...])
 │   │   ├── schemas/           # Pydantic v2 схемы запросов/ответов
-│   │   ├── services/          # бизнес-логика и SQL-агрегации
-│   │   ├── api/v1/            # роутеры: locations, categories, products, orders, analytics; deps.py
-│   │   └── scripts/           # seed.py, simulate.py
+│   │   ├── services/          # бизнес-логика и SQL-агрегации; simulator.py + demand.py — Live-симулятор
+│   │   ├── api/v1/            # роутеры: locations, categories, products, orders, analytics, simulator; deps.py
+│   │   └── scripts/           # seed.py
 │   └── tests/
 └── frontend/
     ├── package.json, vite.config.ts, tailwind.config.ts, tsconfig*.json   (шаг «фронтенд»)
@@ -52,6 +53,7 @@ collegeProjectClaude/
         ├── app/               # store.ts, hooks.ts, router.tsx, routeHandle.ts
         ├── api/               # baseApi.ts + endpoints (injectEndpoints)
         ├── features/filters/  # filtersSlice.ts
+        ├── features/live/     # LiveToggle.tsx, useLive.ts (статус симулятора, опрос раз в 5 с)
         ├── layouts/           # AppLayout.tsx (Sidebar + PageHeader + <Outlet/>)
         ├── pages/             # страницы-маршруты
         ├── components/        # ui/, charts/, dashboard/, orders/, menu/, locations/
@@ -148,7 +150,13 @@ collegeProjectClaude/
 |---|---|---|
 | GET | `/orders` | таблица: `?locationId&status&dateFrom&dateTo&productId&categoryId&minTotal&maxTotal&page&pageSize&sort` → `{items, total, page, pageSize}`. `sort`: `±createdAt`, `±totalAmount`, `±id` (по умолчанию `-createdAt`), `pageSize` ≤ 100. В `items` есть `itemsSummary` («Капучино ×2, Круассан») |
 | GET | `/orders/{id}` | заказ с позициями |
-| GET | `/orders/recent` | Live-лента: `?locationId&limit=20` → `{today: {ordersCount, revenue}, orders: [...]}` |
+
+### Симулятор (Live)
+| метод | путь | описание |
+|---|---|---|
+| GET | `/simulator/status` | `{running, startedAt, ordersCreated, lastOrderAt, idleReason}`; `idleReason` — почему работающий симулятор сейчас не создаёт заказы: `closed`, `no_locations`, `no_products`, `error` |
+| POST | `/simulator/start` | запуск, ответ — статус. Повторный запуск ничего не меняет |
+| POST | `/simulator/stop` | остановка, ответ — статус. Заказы «Готовится» сразу получают итоговый статус |
 
 ### Аналитика (агрегаты для графиков)
 | метод | путь | ответ |
@@ -178,8 +186,19 @@ collegeProjectClaude/
 - Статусы: исторические заказы — `completed`, ~1–2% — `cancelled`.
 - Вставка через asyncpg `copy_records_to_table`: ~10 тыс. заказов и ~17 тыс. позиций за пару секунд. RNG с фиксированным seed, данные воспроизводимы.
 
-`uv run python -m app.scripts.simulate [--interval 8]`: раз в N секунд создаёт заказ в случайной точке
-со статусом `preparing`, через 1–3 минуты переводит его в `completed`.
+**Симулятор** (`services/simulator.py`, `OrderSimulator`) — asyncio-задача в процессе API. Создаётся в lifespan
+приложения, на остановке сервера останавливается. Состояние живёт в памяти процесса, поэтому API запускаем одним воркером.
+- Каждые 2–3 с создаёт заказ со статусом `preparing`. Через 6–15 с заказ переходит в `completed` (~1,5% — в `cancelled`).
+- Учитывает текущее время (`services/demand.py`): заказы получают только открытые сейчас точки. Точку, размер корзины
+  и позиции выбирает по истории за 4 недели для того же часа и типа дня (будни/выходные). Считается SQL-агрегацией:
+  заказы точки, распределение `items_count`, проданное количество каждой позиции. Цена — текущая цена активной позиции.
+  Новые позиции и точки без истории получают небольшой вес (сглаживание +1). Сегодняшние заказы в модель не входят,
+  чтобы симулятор не учился на себе. Модель кэшируется на час, меню и часы работы перечитываются на каждом заказе.
+- Если открытых точек или активных позиций нет, симулятор работает вхолостую и отдаёт причину в `idleReason`.
+- `stop()` мягкий: текущий заказ дописывается и учитывается, затем все заказы «Готовится» получают итоговый статус.
+  `start()` заодно закрывает «Готовится», оставшиеся после аварийного завершения процесса.
+- Live даёт ~1200–1800 заказов в час, так что сегодняшние показатели быстро растут.
+  Вернуть исходные данные: `seed --reset`.
 
 ---
 
@@ -208,23 +227,32 @@ collegeProjectClaude/
   `Product`, `Order`, `Location`, `Category`, `Analytics`. Эндпоинты разнесены по файлам через `injectEndpoints`:
   `analyticsApi.ts`, `ordersApi.ts`, `productsApi.ts`, `locationsApi.ts`, `categoriesApi.ts`.
   Мутации товаров инвалидируют `Product` и `Analytics`; изменение товара — ещё и `Order` (в составе заказа имя товара).
+  `simulatorApi.ts`: запрос статуса и одна мутация `setSimulatorRunning` (start/stop). Ответ мутации сразу кладётся
+  в кэш статуса, а сама мутация инвалидирует `Order` и `Analytics`: при старте и остановке у заказов «Готовится» меняется статус.
 - Типы ответов генерируются из `openapi.json`: `npm run gen:api` → `api/schema.ts` (openapi-typescript, коммитим),
   читаемые алиасы — в `api/types.ts`.
 - `features/filters/filtersSlice.ts` — глобальные фильтры шапки: `period: '7d' | '30d' | '90d'` (по умолчанию `30d`),
-  `locationId: number | null`, `live: boolean`. Мемоизированные селекторы `selectDateRange` (период → `dateFrom/dateTo`
+  `locationId: number | null`. Мемоизированные селекторы `selectDateRange` (период → `dateFrom/dateTo`
   в зоне Алматы) и `selectAnalyticsParams` отдают стабильный объект, чтобы карточки в `memo` не перерисовывались зря.
-- Данные с сервера — только через RTK Query, в слайсах — только состояние UI.
+- Данные с сервера — только через RTK Query, в слайсах — только состояние UI. Поэтому Live берётся из статуса симулятора:
+  `features/live/useLive.ts` опрашивает `/simulator/status` раз в 5 с (так Live, включённый в другой вкладке, виден везде).
+  `useLivePolling()` отдаёт карточкам `pollingInterval: 5000`, пока симулятор работает. Карточки затемняются только
+  при смене фильтра (`isFetching && !currentData`), фоновый опрос их не мигает.
 
 ### Компоненты
 - `layouts/`: `AppLayout`, `Sidebar` + `SidebarLocations` (блок «Точки сети» с часами работы), `PageHeader`.
-- `features/filters/`: `PeriodFilter`, `LocationFilter`, `LiveToggle`, `FiltersSummary` (подзаголовок с датами и точкой).
+- `features/filters/`: `PeriodFilter`, `LocationFilter`, `FiltersSummary` (подзаголовок с датами и точкой).
+- `features/live/`: `LiveToggle` — переключатель в шапке, запускает и останавливает симулятор.
 - `components/ui/`: `Card`, `CardHeader`, `Button`, `SegmentedControl` (7/30/90 дней), `Select`, `Input`, `Field`, `Toggle`,
   `Badge`, `DeltaBadge` (↑ +9,4%), `ColorDot`, `Table`, `Pagination`, `Modal`, `Drawer`, `Skeleton`, `EmptyState`, `ErrorState`.
 - `components/dashboard/` (карточки графиков — в `React.memo`, подготовка данных — `useMemo`, обработчики — `useCallback`):
   `KpiCards`/`KpiCard`, `RevenueChart` (Recharts Area + Line пунктиром), `TopProductsChart` (горизонтальные Bar цвета категории),
   `CategoryDonut` (Recharts Pie с суммой в центре), `LoadHeatmap` + `HeatmapGrid` (своя CSS-сетка, в Recharts heatmap нет;
   подсказка «вторник, 15:00–16:00 · ≈ 16 заказов в час», без наведения — пиковый час), `LocationsCompareChart`
-  (сгруппированные столбцы: выручка и заказы на двух осях), `RecentOrdersPanel` (polling при Live).
+  (сгруппированные столбцы: выручка и заказы на двух осях), `RecentOrdersPanel` + `RecentOrdersList` (Live-лента).
+  Анимация ленты — `lib/useFeedTransitions.ts`: новые заказы раскрываются сверху (`grid-template-rows: 0fr → 1fr`),
+  ушедшие снизу сворачиваются одновременно, поэтому высота ленты не прыгает. Пока идёт Live, у `TopProductsChart`
+  выключена анимация столбцов: Recharts прячет подписи на время анимации, и числа мигали бы раз в 5 с.
   Цвета из данных Recharts 3 получает через проп `shape` (`Cell` устарел).
 - `components/orders/`: `OrdersFilters`, `OrdersTable`, `SortableHeader`, `OrderStatusBadge`, `OrderDrawer`.
   URL-параметры разбирает zod-схема `schemas/ordersSearch.ts` (мусор → «без фильтра», а не 422).
@@ -248,7 +276,7 @@ collegeProjectClaude/
 2. **Сидирование**: `seed.py` с реалистичными профилями. Проверяем SQL-запросами, что пики и разница между будними и выходными на месте.
 3. **CRUD API**: locations, categories, products, orders (список с фильтрами и пагинацией, детальная карточка) + тесты.
 4. **Аналитика**: все `/analytics/*` + тесты на маленьком детерминированном наборе данных.
-5. **Live**: `/orders/recent` + `simulate.py`.
+5. **Live**: симулятор заказов в процессе API (`/simulator/start|stop|status`) + тесты.
 6. **Каркас фронтенда**: Vite + TS, Tailwind и токены, роутер с layout, store, baseApi, ui-компоненты.
 7. **Дашборд**: фильтры, KPI, графики, heatmap, сравнение точек, лента.
 8. **Заказы**: таблица, фильтры в URL, пагинация, drawer.

@@ -1,9 +1,9 @@
 import { useMatches } from 'react-router'
 import { isRouteHandle } from '@/app/routeHandle'
 import { FiltersSummary } from '@/features/filters/FiltersSummary'
-import { LiveToggle } from '@/features/filters/LiveToggle'
 import { LocationFilter } from '@/features/filters/LocationFilter'
 import { PeriodFilter } from '@/features/filters/PeriodFilter'
+import { LiveToggle } from '@/features/live/LiveToggle'
 
 /** Title and global filters of the current page, taken from the deepest route `handle`. */
 export function PageHeader() {

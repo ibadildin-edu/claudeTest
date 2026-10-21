@@ -33,8 +33,7 @@ uv sync
 uv run alembic upgrade head
 uv run alembic revision --autogenerate -m "describe change"
 uv run python -m app.scripts.seed --reset          # 90 дней, ~10 тыс. заказов (--days 180 для сравнения 90/90)
-uv run python -m app.scripts.simulate              # Live: новые заказы в реальном времени
-uv run uvicorn app.main:app --reload               # http://localhost:8000, docs: /docs
+uv run uvicorn app.main:app --reload               # http://localhost:8000, docs: /docs (один воркер: в нём живёт симулятор)
 uv run pytest
 uv run ruff check .
 uv run ruff format .

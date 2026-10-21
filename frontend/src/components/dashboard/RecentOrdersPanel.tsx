@@ -3,30 +3,37 @@ import { memo, useMemo } from 'react'
 import { Link } from 'react-router'
 import { useGetKpiQuery } from '@/api/analyticsApi'
 import { useGetOrdersQuery } from '@/api/ordersApi'
-import type { OrdersQuery } from '@/api/types'
+import type { OrdersQuery, SimulatorIdleReason } from '@/api/types'
 import { buttonClassName } from '@/components/ui/buttonStyles'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { useLivePolling, useLiveStatus } from '@/features/live/useLive'
 import { todayIso } from '@/lib/dates'
 import { formatMoney, formatNumber } from '@/lib/format'
-import { RecentOrderItem } from './RecentOrderItem'
+import { RecentOrdersList } from './RecentOrdersList'
 
 interface RecentOrdersPanelProps {
   locationId: number | null
-  live: boolean
 }
 
 const RECENT_LIMIT = 9
-export const LIVE_POLLING_MS = 8_000
+
+const IDLE_REASON_TEXT: Record<SimulatorIdleReason, string> = {
+  closed: 'Все точки сейчас закрыты. Новые заказы появятся, когда откроется первая.',
+  no_locations: 'В сети нет ни одной точки, заказы создавать негде.',
+  no_products: 'В меню нет активных позиций, заказы создавать не из чего.',
+  error: 'Симулятор не смог создать заказ и попробует снова.',
+}
 
 /**
- * Live feed. The backend has no /orders/recent yet, so the feed is the first page of /orders
- * sorted by time plus today's KPI; both are polled only while Live is on.
+ * Live feed: the first page of /orders sorted by time plus today's KPI.
+ * Both are polled every 5 seconds while the order simulator is running.
  */
-export const RecentOrdersPanel = memo(function RecentOrdersPanel({ locationId, live }: RecentOrdersPanelProps) {
-  const pollingOptions = { pollingInterval: live ? LIVE_POLLING_MS : 0, skipPollingIfUnfocused: true }
+export const RecentOrdersPanel = memo(function RecentOrdersPanel({ locationId }: RecentOrdersPanelProps) {
+  const { running: live, idleReason } = useLiveStatus()
+  const pollingOptions = useLivePolling()
   const today = todayIso()
 
   const ordersArgs = useMemo<OrdersQuery>(
@@ -40,10 +47,15 @@ export const RecentOrdersPanel = memo(function RecentOrdersPanel({ locationId, l
   const orders = useGetOrdersQuery(ordersArgs, pollingOptions)
   const todayKpi = useGetKpiQuery(todayArgs, pollingOptions)
 
+  // currentData, not data: after a location switch the previous location's orders are not
+  // animated out, the feed shows a skeleton until its own orders arrive.
+  const items = orders.currentData?.items
   const allOrdersLink = locationId === null ? '/orders' : `/orders?locationId=${locationId}`
 
   let list
-  if (orders.isLoading) {
+  if (orders.isError) {
+    list = <ErrorState error={orders.error} onRetry={orders.refetch} />
+  } else if (!items) {
     list = (
       <div aria-busy="true" aria-label="Загрузка заказов" className="space-y-5 px-4 py-3">
         {[0, 1, 2, 3, 4].map((key) => (
@@ -55,18 +67,15 @@ export const RecentOrdersPanel = memo(function RecentOrdersPanel({ locationId, l
         ))}
       </div>
     )
-  } else if (orders.isError || !orders.data) {
-    list = <ErrorState error={orders.error} onRetry={orders.refetch} />
-  } else if (orders.data.items.length === 0) {
-    list = <EmptyState title="Заказов пока нет" description="Новые заказы появятся здесь автоматически." />
-  } else {
+  } else if (items.length === 0) {
     list = (
-      <ul className="space-y-1">
-        {orders.data.items.map((order) => (
-          <RecentOrderItem key={order.id} order={order} />
-        ))}
-      </ul>
+      <EmptyState
+        title="Заказов пока нет"
+        description={live ? 'Новые заказы появятся здесь автоматически.' : 'Включите Live, чтобы пошли новые заказы.'}
+      />
     )
+  } else {
+    list = <RecentOrdersList orders={items} />
   }
 
   return (
@@ -83,6 +92,12 @@ export const RecentOrdersPanel = memo(function RecentOrdersPanel({ locationId, l
           {live ? 'LIVE' : 'ПАУЗА'}
         </span>
       </div>
+
+      {live && idleReason && (
+        <p role="status" className="mb-3 rounded-2xl bg-cream-100 px-4 py-2.5 text-sm text-espresso-500">
+          {IDLE_REASON_TEXT[idleReason]}
+        </p>
+      )}
 
       <dl className="mb-3 grid grid-cols-2 gap-3 rounded-2xl bg-cream-200 px-4 py-3">
         <div>

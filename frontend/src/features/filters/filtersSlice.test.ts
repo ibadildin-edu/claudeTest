@@ -3,7 +3,6 @@ import { daysInRange, todayIso } from '@/lib/dates'
 import {
   filtersReducer,
   initialFiltersState,
-  liveChanged,
   locationChanged,
   periodChanged,
   selectAnalyticsParams,
@@ -17,8 +16,7 @@ describe('filtersSlice', () => {
   it('stores the global header filters', () => {
     let state = filtersReducer(undefined, periodChanged('7d'))
     state = filtersReducer(state, locationChanged(3))
-    state = filtersReducer(state, liveChanged(false))
-    expect(state).toEqual({ period: '7d', locationId: 3, live: false })
+    expect(state).toEqual({ period: '7d', locationId: 3 })
 
     expect(filtersReducer(state, locationChanged(null)).locationId).toBeNull()
   })
@@ -32,7 +30,7 @@ describe('filtersSlice', () => {
   it('returns the same params object while filters do not change', () => {
     const state = stateWith({ period: '30d', locationId: null })
     const first = selectAnalyticsParams(state)
-    expect(selectAnalyticsParams({ filters: { ...state.filters, live: false } })).toBe(first)
+    expect(selectAnalyticsParams({ filters: { ...state.filters } })).toBe(first)
     expect(first.locationId).toBeUndefined()
 
     const withLocation = selectAnalyticsParams(stateWith({ period: '30d', locationId: 2 }))

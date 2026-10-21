@@ -23,6 +23,7 @@ import { CardHeader } from '@/components/ui/CardHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { useLivePolling, useLiveStatus } from '@/features/live/useLive'
 import { formatMoney, formatNumber } from '@/lib/format'
 import { palette } from '@/theme/palette'
 
@@ -47,7 +48,9 @@ const TICK_LEFT = 4
 
 export const TopProductsChart = memo(function TopProductsChart({ params, limit = 10 }: TopProductsChartProps) {
   const queryArgs = useMemo(() => ({ ...params, limit }), [params, limit])
-  const { data, isLoading, isFetching, isError, error, refetch } = useGetTopProductsQuery(queryArgs)
+  const polling = useLivePolling()
+  const { running: live } = useLiveStatus()
+  const { data, currentData, isLoading, isFetching, isError, error, refetch } = useGetTopProductsQuery(queryArgs, polling)
 
   const bars = useMemo<ProductBar[]>(
     () =>
@@ -141,7 +144,7 @@ export const TopProductsChart = memo(function TopProductsChart({ params, limit =
     body = <EmptyState title="Продаж за период нет" />
   } else {
     body = (
-      <div className={clsx('transition-opacity', isFetching && 'opacity-60')}>
+      <div className={clsx('transition-opacity', isFetching && !currentData && 'opacity-60')}>
         <ResponsiveContainer width="100%" height={bars.length * ROW_HEIGHT}>
           <BarChart
             data={bars}
@@ -160,11 +163,14 @@ export const TopProductsChart = memo(function TopProductsChart({ params, limit =
               interval={0}
             />
             <Tooltip content={renderTooltip} cursor={{ fill: cursorFill, radius: 8 }} />
+            {/* Recharts hides LabelList while bars animate: with Live refetching every
+                5 seconds the quantities would blink, so bars change without animation. */}
             <Bar
               dataKey="quantity"
               radius={4}
               background={{ fill: palette.cream[200], radius: 4 }}
               shape={renderBar}
+              isAnimationActive={!live}
             >
               <LabelList dataKey="quantity" content={renderQuantity} />
             </Bar>
